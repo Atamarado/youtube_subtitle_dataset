@@ -13,15 +13,22 @@ from utils import lang_code_to_name
 
 class Subtitles_downloader():
 
-    def __init__(self, out_path="out", langs="all", save_links=True, scrolldown=10000):
+    def __init__(self, out_path="out", lang="en", save_links=True, scrolldown=10000, get_generated_subtitles=True, single_line=True):
         print('loading HTML session...')
         self.session = HTMLSession()
         self.sub_filter_code = "&sp=EgIoAQ%253D%253D"
         self.out_path = out_path
-        self.langs = langs
+        self.lang = lang
         self.save_links = save_links
         self.scrolldown = scrolldown
         self.video_ids = []
+        self.get_generated_subtitles = get_generated_subtitles
+        self.single_line = single_line
+
+    def search_by_url(self, links):
+        if not isinstance(links, list):
+            links = [links]
+        self.video_ids = [link.split('v=')[1] for link in links]
 
     def search(self, queries):
         """
@@ -37,7 +44,7 @@ class Subtitles_downloader():
                         csv_out_path = 'links/{}_search_results.csv'.format(q)
                         if os.path.isfile(csv_out_path):
                             #TODO: read video ids from csv & check txt files instead of just assuming each id has been downloaded
-                            continue
+                            pass
 
                     search_url = "https://www.youtube.com/results?search_query={}{}".format(q, self.sub_filter_code)
                     print('Fetching search results for "{}"...'.format(q))
@@ -84,35 +91,22 @@ class Subtitles_downloader():
                 out_name = "{}/{}".format(self.out_path, video_id)
 
                 # count number of languages available
-                n_langs = 0
                 for t in transcript_list:
-                    if t.is_generated:
+                    if (t.is_generated and not self.get_generated_subtitles) or (not t.is_generated and self.get_generated_subtitles):
                         continue
-                    if self.langs != "all":
-                        if t.language_code not in self.langs:
-                            continue
-                    n_langs += 1
+                    if self.lang != t.language_code:
+                        continue
 
-                total_minutes = -1
-                for t in transcript_list:
-                    # filter out generated transcripts and non-specified languages
-                    if t.is_generated:
-                        continue
-                    if self.langs != "all":
-                        if t.language_code not in self.langs:
-                            continue
                     # fetch the actual transcript
                     transcript = t.fetch()
 
                     # write every minute of every language in transcript to a results dict
                     out[t.language_code] = {}
+                    total_minutes = -1
                     for i in transcript:
                         end = i["start"] + i["duration"]
                         minute = int(math.floor(end / 60.0))
-                        if n_langs > 1:
-                            header_txt = '\n{}: \n'.format(lang_code_to_name(t.language_code))
-                        else:
-                            header_txt = ''
+                        header_txt = ''
                         if minute > total_minutes:
                             total_minutes = minute
                         if minute in out[t.language_code]:
@@ -129,7 +123,10 @@ class Subtitles_downloader():
                         random.shuffle(keys)
                         for l in keys:
                             try:
-                                text_file.write(out[l][m])
+                                text_to_write = out[l][m]
+                                if self.single_line:
+                                    text_to_write = text_to_write.replace("\n", " ")
+                                text_file.write(text_to_write)
                             except:
                                 pass
             except Exception:
